@@ -153,18 +153,14 @@ local function inspectClientData(object)
 end
 -- No arbitrary local files, module execution, decompilation, or server-only access.
 task.spawn(function()
-    while alive do
-        local count = 0
-        for _, object in ipairs(RS:GetDescendants()) do
-            if not alive then return end
-            pcall(inspectClientData, object)
-            count = count + 1
-            if count % 100 == 0 then task.wait() end
-        end
-        for _ = 1, 30 do
-            task.wait(1)
-            if not alive then return end
-        end
+    -- Knowledge collection is a bounded startup pass, not a recurring world scan.
+    local count = 0
+    for _, object in ipairs(RS:GetDescendants()) do
+        if not alive then return end
+        pcall(inspectClientData, object)
+        count = count + 1
+        if clientCount >= 750 then break end
+        if count % 50 == 0 then task.wait() end
     end
 end)
 local screen = Instance.new("ScreenGui")
@@ -785,6 +781,9 @@ do
     local pending = setmetatable({}, {__mode = "k"})
     local resultSeen = setmetatable({}, {__mode = "k"})
     local groupPending = {}
+    local candidates = {}
+    local nextDiscovery = 0
+    local groupSeen = {}
     local function visible(object)
         local p = object
         while p and p ~= gui do
@@ -861,30 +860,67 @@ do
         if not (object:IsA("TextLabel") or object:IsA("TextButton")) then return end
         watched[object] = true
         watchedCount = watchedCount + 1
-        -- Include already visible announcements on the first scan.
-        read(object)
     end
-    for _, object in ipairs(gui:GetDescendants()) do watch(object) end
+    task.spawn(function()
+        for i, object in ipairs(gui:GetDescendants()) do
+            if not alive then return end
+            watch(object)
+            if i % 100 == 0 then task.wait() end
+        end
+        nextDiscovery = 0
+    end)
     bind(gui.DescendantAdded, function(object)
         watch(object)
     end)
+    bind(gui.DescendantRemoving, function(object)
+        if watched[object] then
+            watched[object], seen[object], pending[object], resultSeen[object] = nil, nil, nil, nil
+            watchedCount = math.max(0, watchedCount - 1)
+        end
+    end)
     local function scan()
         local ordered, groups = {}, {}
-        for object in pairs(watched) do
-            if object:IsDescendantOf(gui) then
-                table.insert(ordered, object)
-                if not listening and visible(object) and inAnnouncementRegion(object) then
+        local now = os.clock()
+        if now >= nextDiscovery then
+            nextDiscovery = now + 0.75
+            candidates = {}
+            local checked = 0
+            for object in pairs(watched) do
+                if not alive or not armed then return end
+                if object:IsDescendantOf(gui) then
+                    if visible(object) and inAnnouncementRegion(object) then
+                        candidates[#candidates + 1] = object
+                    else
+                        seen[object], pending[object] = nil, nil
+                        -- Success messages may appear outside the banner.
+                        if listening then read(object) end
+                    end
+                end
+                checked = checked + 1
+                if checked % 80 == 0 then task.wait() end
+            end
+        end
+        for _, object in ipairs(candidates) do
+            if object:IsDescendantOf(gui) and visible(object) and inAnnouncementRegion(object) then
+                if seen[object] ~= object.Text then ordered[#ordered + 1] = object end
+                if not listening then
                     local root = object:FindFirstAncestorWhichIsA("ScreenGui")
                     local row = math.floor(object.AbsolutePosition.Y / 24)
-                    local key = (root and root:GetFullName() or "gui") .. ":" .. tostring(row)
-                    groups[key] = groups[key] or {}
-                    table.insert(groups[key], object)
+                    local rootGroups = groups[root or gui]
+                    if not rootGroups then rootGroups = {}; groups[root or gui] = rootGroups end
+                    rootGroups[row] = rootGroups[row] or {}
+                    table.insert(rootGroups[row], object)
                 end
+            else
+                seen[object], pending[object], resultSeen[object] = nil, nil, nil
             end
         end
         -- Some banners place each word in its own TextLabel.
         local nextGroups = {}
-        for key, objects in pairs(groups) do
+        local nextSeen = {}
+        for root, rows in pairs(groups) do
+        nextGroups[root], nextSeen[root] = {}, {}
+        for row, objects in pairs(rows) do
             if #objects > 1 then
                 table.sort(objects, function(a, b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
                 local parts = {}
@@ -896,18 +932,23 @@ do
                     if normalized:find(pattern) or joined:lower():find(pattern) then matched = true; break end
                 end
                 if matched then
-                    local state = groupPending[key]
+                    local state = groupPending[root] and groupPending[root][row]
                     if not state or state.text ~= joined then state = {text = joined, at = os.clock()} end
-                    nextGroups[key] = state
+                    nextGroups[root][row] = state
                     if os.clock() - state.at >= 0.2 then
+                        nextSeen[root][row] = joined
                         for _, object in ipairs(objects) do seen[object], pending[object] = object.Text, nil end
-                        capture(joined, "announcement:split-banner")
+                        if not groupSeen[root] or groupSeen[root][row] ~= joined then
+                            capture(joined, "announcement:split-banner")
+                        end
                         break
                     end
                 end
             end
         end
+        end
         groupPending = nextGroups
+        groupSeen = nextSeen
         table.sort(ordered, function(a, b)
             local rowA = math.floor(a.AbsolutePosition.Y / 24)
             local rowB = math.floor(b.AbsolutePosition.Y / 24)
@@ -938,7 +979,7 @@ end)
 task.spawn(function()
     local lastAttemptAt = -math.huge
     while alive do
-        task.wait(0.02)
+        task.wait(0.1)
         if not alive then break end
         if listening and os.clock() - lastAttemptAt >= (spamRedeem and 0.2 or 1.5) then
             lastAttemptAt = os.clock()
