@@ -7,7 +7,6 @@ local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
 local gui = Players.LocalPlayer:WaitForChild("PlayerGui")
 for _, name in ipairs({"AnnouncementPasteUI", "LemonListenerUI"}) do
     local old = gui:FindFirstChild(name)
@@ -36,133 +35,6 @@ local function bind(signal, callback)
     table.insert(links, c)
     return c
 end
--- Knowledge is reference material, not an AI model or a source of valid codes.
-local knowledge = {version = 1, announcements = {}, clientData = {}}
-local knowledgeFile = "lemon_sab_knowledge_" .. tostring(game.GameId) .. ".json"
-local facts = {
-    {text = "The official experience is Steal a Brainrot on Roblox; place 109983668079237, universe 7709344486.", source = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot"},
-    {text = "The Roblox experience credits BRAZILIAN SPYDER as its creator group (35815907).", source = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot"},
-    {text = "The core gameplay is buying Brainrots, stealing them from other players, generating money, and rebirthing.", source = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot"},
-    {text = "The official description lists slaps and troll gear, and desktop, mobile and tablet support.", source = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot"},
-    {text = "The game description credits Chris for Nyan Cat and @WinnersTakesAll for the backpack system.", source = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot"},
-    {text = "Sammy's public Roblox username is SpyderSammy; account ID 2678001507.", source = "https://www.roblox.com/users/2678001507/profile"},
-    {text = "Public ownership tracking identifies SpyderSammy as owner of BRAZILIAN SPYDER. Group ownership does not establish sole authorship or corporate ownership percentages.", source = "https://roregister.com/group/35815907"},
-    {text = "Industry reporting credits Do Big Studios and Spyder Games as developers.", source = "https://www.brandsuntapped.com/phatmojo-to-launch-steal-a-brainrot-toys-later-this-year/"},
-    {text = "Reuters reported that Steal a Brainrot surpassed 25 million concurrent players in October 2025.", source = "https://www.reuters.com/business/media-telecom/roblox-lifts-annual-bookings-forecast-viral-games-draw-strong-spending-2025-10-30/"},
-    {text = "Sammy publicly posts about Admin Abuse events. Event dates, rewards, codes and clues must be checked against current announcements.", source = "https://www.youtube.com/watch?v=MgjwF61nOnU"},
-}
-local announcementSeen, clientCount = {}, 0
-local saveScheduled = false
-local saveState = (writefile and readfile) and "Persistence ready" or "Session memory only"
-if readfile and isfile then
-    local ok, saved = pcall(function()
-        if isfile(knowledgeFile) then
-            local raw = readfile(knowledgeFile)
-            if #raw <= 2000000 then return HttpService:JSONDecode(raw) end
-        end
-    end)
-    if ok and type(saved) == "table" and saved.version == 1 then
-        if type(saved.announcements) == "table" then
-            for _, item in ipairs(saved.announcements) do
-                if #knowledge.announcements >= 200 then break end
-                if type(item) == "table" and type(item.text) == "string" then
-                    local text = item.text:sub(1, 1200)
-                    table.insert(knowledge.announcements, {
-                        text = text, at = tonumber(item.at) or 0,
-                        source = tostring(item.source or "saved observation"):sub(1, 160),
-                    })
-                    announcementSeen[text] = true
-                end
-            end
-        end
-        if type(saved.clientData) == "table" then
-            for path, entry in pairs(saved.clientData) do
-                if clientCount >= 750 then break end
-                if type(path) == "string" and type(entry) == "table" and type(entry.name) == "string" then
-                    knowledge.clientData[path:sub(1, 240)] = {
-                        name = entry.name:sub(1, 120),
-                        details = tostring(entry.details or ""):sub(1, 400),
-                    }
-                    clientCount = clientCount + 1
-                end
-            end
-        end
-    end
-end
-local function saveKnowledge()
-    if not writefile then saveState = "Session memory only"; return end
-    local ok = pcall(function()
-        writefile(knowledgeFile, HttpService:JSONEncode(knowledge))
-    end)
-    saveState = ok and "Memory saved locally" or "Save failed; session memory retained"
-end
-local function scheduleSave()
-    if saveScheduled then return end
-    saveScheduled = true
-    task.delay(2, function()
-        saveScheduled = false
-        if alive then saveKnowledge() end
-    end)
-end
-local function rememberAnnouncement(text, source)
-    text = text:sub(1, 1200)
-    if announcementSeen[text] then return end
-    if #knowledge.announcements >= 200 then
-        local removed = table.remove(knowledge.announcements, 1)
-        announcementSeen[removed.text] = nil
-    end
-    announcementSeen[text] = true
-    table.insert(knowledge.announcements, {text = text, source = source, at = os.time()})
-    scheduleSave()
-end
-local allowedAttributes = {
-    displayname = true, rarity = true, price = true, cost = true,
-    income = true, incomerate = true, moneypersecond = true,
-    mutation = true, trait = true, multiplier = true, rebirth = true,
-}
-local function inspectClientData(object)
-    local current = object
-    local inData = false
-    while current and current ~= RS do
-        local name = current.Name:lower()
-        if name == "datas" or name == "data" or name == "definitions"
-            or name == "configs" or name == "configuration" then inData = true; break end
-        current = current.Parent
-    end
-    if not inData then return end
-    local details = {}
-    for key, value in pairs(object:GetAttributes()) do
-        if allowedAttributes[key:lower()] and (type(value) == "string" or type(value) == "number") then
-            table.insert(details, key .. "=" .. tostring(value):sub(1, 100))
-        end
-    end
-    if object:IsA("StringValue") or object:IsA("NumberValue") or object:IsA("IntValue") then
-        table.insert(details, "Value=" .. tostring(object.Value):sub(1, 100))
-    end
-    if #details == 0 and not object:IsA("ModuleScript") then return end
-    table.sort(details)
-    local path = object:GetFullName():sub(1, 240)
-    if not knowledge.clientData[path] and clientCount >= 750 then return end
-    local description = table.concat(details, ", "):sub(1, 400)
-    if #details == 0 then description = "Module name only; contents not read or executed" end
-    local old = knowledge.clientData[path]
-    if old and old.details == description and old.name == object.Name then return end
-    if not old then clientCount = clientCount + 1 end
-    knowledge.clientData[path] = {name = object.Name:sub(1, 120), details = description}
-    scheduleSave()
-end
--- No arbitrary local files, module execution, decompilation, or server-only access.
-task.spawn(function()
-    -- Knowledge collection is a bounded startup pass, not a recurring world scan.
-    local count = 0
-    for _, object in ipairs(RS:GetDescendants()) do
-        if not alive then return end
-        pcall(inspectClientData, object)
-        count = count + 1
-        if clientCount >= 750 then break end
-        if count % 50 == 0 then task.wait() end
-    end
-end)
 local screen = Instance.new("ScreenGui")
 screen.Name = "LemonListenerUI"
 screen.ResetOnSpawn = false
@@ -287,96 +159,6 @@ local function button(text, x, color)
     end)
     return b
 end
-local knowledgeButton = button("KNOWLEDGE", 216, Color3.fromRGB(48, 34, 23))
-knowledgeButton.Position = UDim2.fromOffset(216, 10)
-knowledgeButton.Size = UDim2.fromOffset(88, 26)
-knowledgeButton.TextSize = 10
-local knowledgePanel = Instance.new("Frame", frame)
-knowledgePanel.Position = UDim2.fromOffset(8, 46)
-knowledgePanel.Size = UDim2.new(1, -16, 1, -54)
-knowledgePanel.BackgroundColor3 = Color3.fromRGB(23, 17, 12)
-knowledgePanel.BackgroundTransparency = 0.12
-knowledgePanel.BorderSizePixel = 0
-knowledgePanel.ZIndex = 20
-knowledgePanel.Visible = false
-Instance.new("UICorner", knowledgePanel).CornerRadius = UDim.new(0, 10)
-local memorySummary = Instance.new("TextLabel", knowledgePanel)
-memorySummary.Position = UDim2.fromOffset(10, 10)
-memorySummary.Size = UDim2.new(1, -20, 0, 62)
-memorySummary.BackgroundTransparency = 1
-memorySummary.TextColor3 = Color3.fromRGB(255, 185, 95)
-memorySummary.Font = Enum.Font.GothamMedium
-memorySummary.TextSize = 11
-memorySummary.TextWrapped = true
-memorySummary.TextXAlignment = Enum.TextXAlignment.Left
-memorySummary.ZIndex = 21
-local memoryScroll = Instance.new("ScrollingFrame", knowledgePanel)
-memoryScroll.Position = UDim2.fromOffset(10, 80)
-memoryScroll.Size = UDim2.new(1, -20, 1, -132)
-memoryScroll.BackgroundTransparency = 1
-memoryScroll.BorderSizePixel = 0
-memoryScroll.ScrollBarThickness = 4
-memoryScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 155, 45)
-memoryScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-memoryScroll.CanvasSize = UDim2.new()
-memoryScroll.ZIndex = 21
-local memoryText = Instance.new("TextLabel", memoryScroll)
-memoryText.Size = UDim2.new(1, -10, 0, 0)
-memoryText.AutomaticSize = Enum.AutomaticSize.Y
-memoryText.BackgroundTransparency = 1
-memoryText.TextColor3 = Color3.fromRGB(255, 245, 230)
-memoryText.TextSize = 11
-memoryText.Font = Enum.Font.GothamMedium
-memoryText.TextWrapped = true
-memoryText.TextXAlignment = Enum.TextXAlignment.Left
-memoryText.TextYAlignment = Enum.TextYAlignment.Top
-memoryText.ZIndex = 22
-local exportKnowledge = button("COPY KNOWLEDGE", 10, Color3.fromRGB(175, 80, 25))
-exportKnowledge.Parent = knowledgePanel
-exportKnowledge.Position = UDim2.new(0, 10, 1, -42)
-exportKnowledge.Size = UDim2.new(1, -20, 0, 32)
-exportKnowledge.ZIndex = 21
-local function refreshKnowledgePanel()
-    memorySummary.Text = ("%d reference facts | %d announcements | %d client entries\n%s\nObserved text is unverified; this is memory, not AI training."):format(
-        #facts, #knowledge.announcements, clientCount, saveState)
-    local lines = {"REFERENCE FACTS (checked November 1, 2026)"}
-    for _, fact in ipairs(facts) do
-        table.insert(lines, "\n" .. fact.text .. "\nSource: " .. fact.source)
-    end
-    table.insert(lines, "\nANNOUNCEMENT OBSERVATIONS (unverified; latest 30 shown)")
-    for i = #knowledge.announcements, math.max(1, #knowledge.announcements - 29), -1 do
-        local item = knowledge.announcements[i]
-        table.insert(lines, "\n" .. os.date("!%Y-%m-%d %H:%M UTC", item.at) .. " | " .. item.source .. "\n" .. item.text)
-    end
-    table.insert(lines, "\nCLIENT DATA OBSERVATIONS (first 100 shown; may be outdated)")
-    local paths = {}
-    for path in pairs(knowledge.clientData) do table.insert(paths, path) end
-    table.sort(paths)
-    for i = 1, math.min(100, #paths) do
-        local entry = knowledge.clientData[paths[i]]
-        table.insert(lines, "\n" .. entry.name .. ": " .. entry.details .. "\n" .. paths[i])
-    end
-    memoryText.Text = table.concat(lines, "\n")
-end
-bind(knowledgeButton.MouseButton1Click, function()
-    knowledgePanel.Visible = not knowledgePanel.Visible
-    knowledgeButton.Text = knowledgePanel.Visible and "CLOSE" or "KNOWLEDGE"
-    if knowledgePanel.Visible then refreshKnowledgePanel() end
-end)
-bind(exportKnowledge.MouseButton1Click, function()
-    local writer = setclipboard or toclipboard
-    if not writer then memorySummary.Text = "Executor does not support clipboard export."; return end
-    local ok = pcall(function()
-        writer(HttpService:JSONEncode({referenceFacts = facts, observations = knowledge}))
-    end)
-    memorySummary.Text = ok and "Knowledge copied as JSON, including source links." or "Knowledge export failed."
-end)
-task.spawn(function()
-    while alive do
-        task.wait(2)
-        if alive and knowledgePanel.Visible then refreshKnowledgePanel() end
-    end
-end)
 local copyButton = button("COPY", 10, Color3.fromRGB(48, 34, 23))
 local clearButton = button("CLEAR", 111, Color3.fromRGB(48, 34, 23))
 local manualRedeem = button("REDEEM", 212, Color3.fromRGB(255, 155, 45))
@@ -637,9 +419,6 @@ local function capture(text, source)
     if text == previousRead and source ~= previousSource
         and now - previousReadAt < 0.6 then return end
     previousRead, previousSource, previousReadAt = text, source, now
-    if source == "remote" or (type(source) == "string" and source:sub(1, 13) == "announcement:") then
-        rememberAnnouncement(text, source)
-    end
     readCount = readCount + 1
     footer.Text = ("TOP BANNER | READ: %d | LABELS: %d\nF6 listen | F7 stop | Spam interval: 0.2s"):format(readCount, watchedCount)
     top.Text = "Latest read: " .. text:sub(1, 260)
@@ -971,7 +750,6 @@ do
     status.Text = "Armed: watching the top-center announcement area."
 end
 bind(screen.Destroying, function()
-    saveKnowledge()
     alive, listening, armed, dragging = false, false, false, false
     for _, c in ipairs(links) do c:Disconnect() end
     table.clear(links)
